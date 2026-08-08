@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlockYou | ALPR Dragnet Analysis</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; color: #333; background-color: #f8f9fa; overflow: hidden; margin: 0; }
+
+        #dashboard-container { display: flex; flex-direction: row; height: 100vh; width: 100vw; overflow: hidden; }
+        
+        #sidebar { width: 460px; flex: 0 0 460px; background-color: #ffffff; padding: 20px; box-shadow: 2px 0 10px rgba(0,0,0,0.15); z-index: 1000; overflow-y: auto; height: 100vh; }
+        #map { flex: 1; height: 100vh; z-index: 1; }
+
+        h1 { font-size: 24px; font-weight: 700; color: #2c3e50; margin-bottom: 2px; }
+        h2 { font-size: 13px; font-weight: 600; color: #7f8c8d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; }
+
+        .stat-card { background-color: #f1f3f5; padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: center; border-left: 5px solid #36b9cc; }
+        .stat-card.alert { background-color: #ffe8e7; border-left-color: #e74a3b; }
+        .stat-card h3 { font-size: 26px; margin-bottom: 2px; }
+        .stat-card p { font-size: 11px; font-weight: 600; color: #666; }
+
+        /* Accordions */
+        .accordion-section { margin-bottom: 12px; border: 1px solid #e3e6f0; border-radius: 6px; background: #fff; display: block; }
+        .accordion-header { padding: 12px; background: #f8f9fa; font-size: 13px; font-weight: bold; color: #2c3e50; cursor: pointer; user-select: none; border-bottom: 1px solid #e3e6f0; border-radius: 6px 6px 0 0; }
+        .accordion-header:hover { background: #edf2f7; }
+        .accordion-content { padding: 12px; }
+
+        .section-desc { font-size: 11px; color: #666; margin-bottom: 8px; line-height: 1.4; }
+        .scroll-list { max-height: 220px; overflow-y: auto; padding-right: 6px; }
+
+        .target-item { background: #fff; border: 1px solid #ddd; padding: 10px; border-radius: 6px; margin-bottom: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 12px; line-height: 1.4; }
+        .target-item:hover { border-color: #e74a3b; background: #fff5f5; transform: translateX(3px); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+        /* GSV Box */
+        .gsv-box { background: #e8f0fe; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #c6dafc; }
+        .gsv-btn { display: inline-flex; align-items: center; justify-content: center; background-color: #4285F4; color: white; text-decoration: none; padding: 10px; border-radius: 4px; font-size: 13px; font-weight: 600; width: 100%; transition: background 0.2s; margin-bottom: 8px; border: none; font-family: 'Inter', sans-serif;}
+        .gsv-btn:hover:not(.disabled) { background-color: #3367D6; color: white; }
+        .gsv-btn.disabled { background-color: #ccc; cursor: not-allowed; opacity: 0.7; pointer-events: none; }
+        .gsv-help-text { font-size: 12px; color: #1a73e8; margin-bottom: 8px; font-weight: 600; text-align: center; }
+        .gsv-explanation { font-size: 11px; color: #5f6368; line-height: 1.5; padding-top: 8px; border-top: 1px solid #c6dafc; }
+
+        /* Profile & Demographic Badges */
+        .analysis-box { font-size: 13px; line-height: 1.6; padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 10px; }
+        .demo-badge { display: flex; justify-content: space-between; background: #f1f3f5; padding: 8px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 12px; border: 1px solid #e3e6f0; }
+        .demo-badge strong { color: #444; }
+
+        /* Filters & Legend */
+        .legend h3 { font-size: 12px; margin-bottom: 6px; color: #2c3e50; }
+        .legend-item { display: flex; align-items: flex-start; font-size: 12px; margin-bottom: 8px; padding: 6px; border-radius: 4px; }
+        .subtext { font-size: 11px; color: #777; line-height: 1.3; display: block; margin-top: 2px; }
+
+        .clickable-filter { cursor: pointer; transition: background 0.2s ease, opacity 0.2s ease; }
+        .clickable-filter:hover { background: #f8f9fa; border-color: #e3e6f0; }
+        .clickable-filter.inactive { opacity: 0.35; filter: grayscale(100%); }
+
+        .color-box { width: 14px; height: 14px; border-radius: 3px; margin-right: 10px; display: inline-block; flex-shrink: 0; margin-top: 2px; }
+        
+        .low { background-color: #36b9cc; }
+        .high { background-color: #e74a3b; }
+
+        .leaflet-popup-content h4 { margin: 0 0 6px 0; border-bottom: 1px solid #ccc; padding-bottom: 4px; color: #2c3e50; font-size: 14px !important; }
+        .leaflet-popup-content p { margin: 3px 0; font-size: 12px !important; }
+    </style>
+</head>
+<body>
+    <div id="dashboard-container">
+        <!-- Sidebar -->
+        <div id="sidebar">
+            <h1>FlockYou</h1>
+            <h2>Spatial Dragnet Analysis</h2>
+            
+            <div class="stat-card">
+                <h3 id="total-cameras">--</h3>
+                <p>Total Cameras Analyzed</p>
+            </div>
+            
+            <div class="stat-card alert">
+                <h3 id="intercept-cameras">--</h3>
+                <p>Cameras Monitoring Sensitive Sites</p>
+            </div>
+
+            <!-- STREET VIEW BOX (Restored working A-tag format) -->
+            <div id="global-gsv-container" class="gsv-box">
+                <a id="gsv-link" href="#" target="_blank" class="gsv-btn disabled">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align: middle;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    Open Google Street View
+                </a>
+                <p class="gsv-help-text" id="gsv-help">Select a camera from the map or lists below to activate Street View.</p>
+                <div class="gsv-explanation">
+                    <strong>Why 60°?</strong> Standard ALPR cameras utilize a 60° horizontal field of view. This link drops you at the camera coordinates and rotates your view to <strong id="prof-heading-text">0</strong>°, perfectly matching its installed orientation to recreate the exact surveillance perspective.
+                </div>
+            </div>
+
+            <!-- MAP FILTERS & INFRASTRUCTURE DIRECTORY -->
+            <details class="accordion-section" open>
+                <summary class="accordion-header">Map Filters & Infrastructure Directory</summary>
+                <div class="accordion-content">
+                    <div class="legend" style="margin-top: 0; padding-top: 0; border: none;">
+                        <h3 style="margin-top: 5px;">Filter Camera Status</h3>
+                        <div class="legend-item clickable-filter active" id="filter-clear" onclick="toggleStatusFilter('clear')">
+                            <span class="color-box low" style="border-radius: 50%;"></span>
+                            <div>
+                                <strong>Clear Cameras (Circles)</strong><br>
+                                <span class="subtext">Routine surveillance. No sensitive infrastructure within 45m range.</span>
+                            </div>
+                        </div>
+                        <div class="legend-item clickable-filter active" id="filter-intercept" onclick="toggleStatusFilter('intercept')">
+                            <span class="color-box high" style="border-radius: 50%;"></span>
+                            <div>
+                                <strong>Intercepting Cameras (Circles)</strong><br>
+                                <span class="subtext">High Privacy Risk. Direct line-of-sight to sensitive facilities.</span>
+                            </div>
+                        </div>
+                        
+                        <h3 style="margin-top: 15px;">Filter Infrastructure Category</h3>
+                        <div class="legend-item clickable-filter active" id="cat-healthcare" onclick="toggleCategoryFilter('healthcare')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" style="margin-right: 10px; flex-shrink: 0; margin-top: 2px;"><polygon points="12,2 22,22 2,22" fill="#ff6b81" stroke="#fff" stroke-width="2"/></svg>
+                            <div>
+                                <strong>Healthcare & Clinics (Triangles)</strong><br>
+                                <span class="subtext">Hospitals, pharmacies, and clinics.</span>
+                            </div>
+                        </div>
+                        <div class="legend-item clickable-filter active" id="cat-legal" onclick="toggleCategoryFilter('legal')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" style="margin-right: 10px; flex-shrink: 0; margin-top: 2px;"><polygon points="12,2 22,22 2,22" fill="#9b59b6" stroke="#fff" stroke-width="2"/></svg>
+                            <div>
+                                <strong>Legal Aid & Social Services (Triangles)</strong><br>
+                                <span class="subtext">Food banks, shelters, and legal offices.</span>
+                            </div>
+                        </div>
+                        
+                        <!-- COMMUNITY OFF BY DEFAULT -->
+                        <div class="legend-item clickable-filter inactive" id="cat-community" onclick="toggleCategoryFilter('community')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" style="margin-right: 10px; flex-shrink: 0; margin-top: 2px;"><polygon points="12,2 22,22 2,22" fill="#2ecc71" stroke="#fff" stroke-width="2"/></svg>
+                            <div>
+                                <strong>Community & Schools (Triangles)</strong><br>
+                                <span class="subtext">Turned OFF by default to reduce map clutter. Click to enable.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr style="margin:15px 0; border:0; border-top:1px solid #eee;">
+                    
+                    <h3 style="font-size: 13px; margin-bottom: 5px; color: #2c3e50;">Infrastructure Directory</h3>
+                    <p class="section-desc">A complete directory of currently filtered sensitive facilities in the region.</p>
+                    <div id="infrastructure-list" class="scroll-list" style="max-height: 180px;"></div>
+                </div>
+            </details>
+
+            <!-- HIGH RISK CAMERAS -->
+            <details class="accordion-section" open>
+                <summary class="accordion-header">Intercepting Cameras (High Risk)</summary>
+                <div class="accordion-content">
+                    <p class="section-desc">Cameras whose 45-meter visual dragnet directly intercepts sensitive infrastructure.</p>
+                    <div id="intercept-list" class="scroll-list"></div>
+                </div>
+            </details>
+
+            <!-- 3. CLEAR CAMERAS -->
+            <details class="accordion-section">
+                <summary class="accordion-header">Clear Cameras (Routine)</summary>
+                <div class="accordion-content">
+                    <p class="section-desc">Cameras with no mapped sensitive infrastructure within their physical view cone.</p>
+                    <div id="clear-list" class="scroll-list"></div>
+                </div>
+            </details>
+
+            <!-- 4. SELECTED CAMERA PROFILE & COMMUNITY CONTEXT -->
+            <details class="accordion-section" id="profile-wrapper" open>
+                <summary class="accordion-header">Selected Camera Profile & Community Context</summary>
+                <div class="accordion-content">
+                    
+                    <div id="profile-placeholder">
+                        <p style="font-size:12px; color:#666; font-style:italic;">Select a camera on the map or from the lists above to load its profile, orientation, and community demographics.</p>
+                    </div>
+
+                    <div id="profile-data" style="display: none;">
+                        <div class="analysis-box">
+                            <p style="margin-bottom: 4px;"><strong>Camera ID:</strong> <span id="prof-id"></span></p>
+                            <p><strong>Location:</strong> <span id="prof-location">Loading location...</span></p>
+                        </div>
+                        <p style="font-size: 11px; color:#555; margin-bottom: 6px; text-transform:uppercase; font-weight:bold;">Community Context (Census Block)</p>
+                        <div id="demo-container"></div>
+                    </div>
+
+                </div>
+            </details>
+
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([38.5816, -121.4944], 12);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        function safeSetHTML(id, html) {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = html;
+        }
+
+        function getCameraSectorPolygon(lat, lng, headingDeg) {
+            if (isNaN(headingDeg)) headingDeg = 0;
+            const d = 45 / 6378137; 
+            const latRad = lat * Math.PI / 180;
+            const lngRad = lng * Math.PI / 180;
+            const points = [[lat, lng]];
+            for (let angle = headingDeg - 30; angle <= headingDeg + 30; angle += 5) {
+                const bRad = angle * Math.PI / 180;
+                const pLatRad = Math.asin(Math.sin(latRad) * Math.cos(d) + Math.cos(latRad) * Math.sin(d) * Math.cos(bRad));
+                const pLngRad = lngRad + Math.atan2(Math.sin(bRad) * Math.sin(d) * Math.cos(latRad), Math.cos(d) - Math.sin(latRad) * Math.sin(pLatRad));
+                points.push([pLatRad * 180 / Math.PI, pLngRad * 180 / Math.PI]);
+            }
+            return points;
+        }
+
+        function getCategoryGroup(category) {
+            const cat = category ? category.toLowerCase() : '';
+            if (['clinic', 'abortion', 'hospital', 'pharmacy', 'birthing_center', 'healthcare'].some(k => cat.includes(k))) return 'healthcare';
+            if (['legal', 'lawyer', 'social_facility', 'food_bank', 'shelter', 'ngo', 'diplomatic', 'association'].some(k => cat.includes(k))) return 'legal';
+            return 'community';
+        }
+        function getSiteColor(group) {
+            switch(group) { case 'healthcare': return '#ff6b81'; case 'legal': return '#9b59b6'; default: return '#2ecc71'; }
+        }
+
+        // Changed cameraLayers storage to hold both the marker and properties to fix the click bug
+        let cameraLayers = {};
+        let cameraMarkersGroup = L.layerGroup().addTo(map);
+        let cameraSectorsGroup = L.layerGroup().addTo(map);
+        let sensitiveSitesGroup = L.layerGroup().addTo(map);
+
+        let activeStatusFilters = { clear: true, intercept: true };
+        let activeCategoryFilters = { healthcare: true, legal: true, community: false }; 
+
+        let allCameraFeatures = [];
+        let allSiteFeatures = [];
+
+        function updateSidebarProfile(props, lat, lng) {
+            document.getElementById('profile-placeholder').style.display = 'none';
+            document.getElementById('profile-data').style.display = 'block';
+
+            const pov = parseFloat(props.pct_poverty);
+            const income = parseFloat(props.median_income);
+            const minority = (parseFloat(props.pct_black) || 0) + (parseFloat(props.pct_hispanic) || 0);
+            let heading = parseFloat(props.direction);
+            if (isNaN(heading)) heading = 0;
+
+            safeSetHTML('prof-id', props.id || "Unknown");
+            
+            // Set temporary loading states in BOTH the profile box and the list item
+            safeSetHTML('prof-location', "Loading location...");
+            const listLocationSpan = document.getElementById(`cam-loc-${props.id}`);
+            if (listLocationSpan) listLocationSpan.innerText = "Loading location...";
+            
+            // Fetch live location
+            fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?location=${lng},${lat}&f=json`)
+                .then(res => res.json())
+                .then(data => {
+                    const addr = data?.address?.Match_addr || data?.address?.ShortLabel || "Location Data Unavailable";
+                    safeSetHTML('prof-location', addr);
+                    // Dynamically updates the list text exactly as requested!
+                    if (listLocationSpan) listLocationSpan.innerText = addr;
+                })
+                .catch(() => {
+                    safeSetHTML('prof-location', "Location Data Unavailable");
+                    if (listLocationSpan) listLocationSpan.innerText = "Location Data Unavailable";
+                });
+            
+            // GOOGLE STREET VIEW URL 
+            const gsvUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}&heading=${heading}&pitch=0`;
+            const gsvLink = document.getElementById('gsv-link');
+            if (gsvLink) {
+                gsvLink.href = gsvUrl;
+                gsvLink.classList.remove('disabled');
+                gsvLink.style.pointerEvents = 'auto'; 
+            }
+            
+            safeSetHTML('prof-heading-text', heading);
+            safeSetHTML('gsv-help', `GSV Ready: Viewing Camera ${props.id}`);
+
+            if (isNaN(pov) && isNaN(income)) {
+                safeSetHTML('demo-container', `<p style="font-size:12px; font-style:italic; color:#666; padding:10px; text-align:center; background:#f8f9fa; border-radius:4px; border:1px solid #e3e6f0;">Unpopulated / Commercial Infrastructure Zone<br><span style="font-size:10px; color:#888;">(Census data suppressed due to 0 residential pop.)</span></p>`);
+            } else {
+                safeSetHTML('demo-container', `
+                    <div class="demo-badge"><strong>Median Household Income</strong> <span>${!isNaN(income) ? '$'+income.toLocaleString() : 'Suppressed'}</span></div>
+                    <div class="demo-badge"><strong>Poverty Rate</strong> <span>${!isNaN(pov) ? pov.toFixed(1)+'%' : 'Suppressed'}</span></div>
+                    <div class="demo-badge"><strong>Black / Hispanic Pop.</strong> <span>${minority > 0 ? minority.toFixed(1)+'%' : 'Suppressed'}</span></div>
+                `);
+            }
+        }
+
+        window.zoomToMap = function(lat, lng, camId = null) {
+            if (isNaN(lat) || isNaN(lng)) return;
+            map.flyTo([lat, lng], 18, { duration: 1.0 });
+            
+            // Fully fixed undefined feature bug here
+            if(camId && cameraLayers[camId]) {
+                setTimeout(() => {
+                    cameraLayers[camId].marker.openPopup();
+                    updateSidebarProfile(cameraLayers[camId].props, lat, lng);
+                }, 1000);
+            }
+        };
+
+        window.toggleStatusFilter = function(statusKey) {
+            activeStatusFilters[statusKey] = !activeStatusFilters[statusKey];
+            const el = document.getElementById(`filter-${statusKey}`);
+            if (el) el.classList.toggle('inactive', !activeStatusFilters[statusKey]);
+            applyFilters();
+        };
+
+        window.toggleCategoryFilter = function(categoryKey) {
+            activeCategoryFilters[categoryKey] = !activeCategoryFilters[categoryKey];
+            const el = document.getElementById(`cat-${categoryKey}`);
+            if (el) el.classList.toggle('inactive', !activeCategoryFilters[categoryKey]);
+            applyFilters();
+        };
+
+        function renderInfrastructureList() {
+            let html = "";
+            allSiteFeatures.forEach(item => {
+                if (activeCategoryFilters[item.group]) {
+                    const props = item.feature.properties || {};
+                    let lat = item.layer.getLatLng ? item.layer.getLatLng().lat : item.layer.getBounds().getCenter().lat;
+                    let lng = item.layer.getLatLng ? item.layer.getLatLng().lng : item.layer.getBounds().getCenter().lng;
+                    const catName = props.category ? props.category.replace(/_/g, ' ') : "Facility";
+                    const color = getSiteColor(item.group);
+                    
+                    html += `
+                        <div class="target-item" onclick="map.flyTo([${lat}, ${lng}], 18, {duration: 1.5})">
+                            <div style="display:flex; align-items:center; margin-bottom: 2px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" style="margin-right: 8px; flex-shrink: 0;"><polygon points="12,2 22,22 2,22" fill="${color}" stroke="#fff" stroke-width="2"/></svg>
+                                <strong>${props.name || "Unknown Facility"}</strong>
+                            </div>
+                            <span style="color:#666; font-size: 11px; text-transform: capitalize; padding-left: 20px;">Type: ${catName}</span>
+                        </div>
+                    `;
+                }
+            });
+            safeSetHTML('infrastructure-list', html || "<p style='font-size:12px; color:#666;'>No facilities match filters.</p>");
+        }
+
+        function applyFilters() {
+            cameraMarkersGroup.clearLayers();
+            cameraSectorsGroup.clearLayers();
+            
+            allCameraFeatures.forEach(item => {
+                const isIntercept = (item.feature.properties.surveilled_sites_count > 0);
+                if (isIntercept) {
+                    if (activeStatusFilters.intercept) {
+                        cameraMarkersGroup.addLayer(item.marker);
+                        if (item.sector) cameraSectorsGroup.addLayer(item.sector);
+                    }
+                } else {
+                    if (activeStatusFilters.clear) {
+                        cameraMarkersGroup.addLayer(item.marker);
+                        if (item.sector) cameraSectorsGroup.addLayer(item.sector);
+                    }
+                }
+            });
+
+            sensitiveSitesGroup.clearLayers();
+            allSiteFeatures.forEach(item => {
+                if (activeCategoryFilters[item.group]) sensitiveSitesGroup.addLayer(item.layer);
+            });
+            
+            renderInfrastructureList();
+        }
+
+        async function safeFetchJSON(url) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) { return null; }
+        }
+
+        Promise.all([
+            safeFetchJSON('./data/master_alpr_dragnet.geojson'),
+            safeFetchJSON('./data/sensitive_sites.geojson')
+        ])
+        .then(([cameraData, siteData]) => {
+            if (!cameraData || !siteData) {
+                console.error("GeoJSON files failed to load.");
+                return;
+            }
+
+            // SENSITIVE SITES (TINY TRIANGLES)
+            L.geoJSON(siteData, {
+                pointToLayer: (f, latlng) => {
+                    const props = f.properties || {};
+                    const group = getCategoryGroup(props.category);
+                    const color = getSiteColor(group);
+                    
+                    const svgIcon = L.divIcon({
+                        className: 'custom-triangle-icon',
+                        html: `<svg width="10" height="10" viewBox="0 0 24 24"><polygon points="12,2 22,22 2,22" fill="${color}" stroke="#fff" stroke-width="2"/></svg>`,
+                        iconSize: [10, 10],
+                        iconAnchor: [5, 5]
+                    });
+
+                    const marker = L.marker(latlng, { icon: svgIcon });
+                    const catName = props.category ? props.category.replace(/_/g, ' ') : "Unknown";
+                    marker.bindPopup(`<h4 style="font-size:14px; margin:0 0 6px 0; color:${color}">${props.name || "Facility"}</h4><p style="margin:0; font-size:12px;">Type: ${catName}</p>`);
+                    
+                    allSiteFeatures.push({ feature: f, layer: marker, group });
+                    return marker;
+                }
+            });
+
+            let totalCams = 0, interceptCams = 0;
+            let interceptHTML = "";
+            let clearHTML = "";
+
+            L.geoJSON(cameraData, {
+                onEachFeature: (f, layer) => {
+                    if (!f.geometry || !f.geometry.coordinates) return;
+                    
+                    totalCams++;
+                    const props = f.properties || {};
+                    const lng = parseFloat(f.geometry.coordinates[0]);
+                    const lat = parseFloat(f.geometry.coordinates[1]);
+                    const heading = parseFloat(props.direction) || 0;
+                    const isIntercepting = (props.surveilled_sites_count > 0);
+
+                    const marker = L.circleMarker([lat, lng], { radius: 5, fillColor: isIntercepting ? '#e74a3b' : '#36b9cc', color: '#fff', weight: 1, fillOpacity: 0.9 });
+                    
+                    const sector = L.polygon(getCameraSectorPolygon(lat, lng, heading), { 
+                        color: isIntercepting ? '#e74a3b' : '#36b9cc', 
+                        weight: 1, 
+                        fillOpacity: 0.35,
+                        interactive: false 
+                    });
+
+                    // Store both the marker AND the properties to fix the zoomToMap crash
+                    cameraLayers[props.id] = { marker: marker, props: props };
+
+                    let popupHTML = `<h4 style="font-size:14px; margin:0 0 6px 0; padding-bottom:4px; border-bottom:1px solid #ccc;">Camera ${props.id || "ALPR"}</h4>`;
+                    if (isIntercepting) popupHTML += `<p style="color:#e74a3b; font-weight:bold; font-size:12px; margin:0;">Intercepting Sensitive Facility</p>`;
+                    else popupHTML += `<p style="margin:0; font-size:12px;">Status: Clear</p>`;
+                    
+                    marker.bindPopup(popupHTML);
+
+                    marker.on('click', () => {
+                        map.flyTo([lat, lng], 18, { duration: 1.0 });
+                        updateSidebarProfile(props, lat, lng);
+                    });
+
+                    allCameraFeatures.push({ feature: f, marker, sector });
+                    
+                    // HTML LIST GENERATION (Now securely bound to individual click loading)
+                    if (isIntercepting) {
+                        interceptCams++;
+                        
+                        // We extract strings if they exist, otherwise we fallback
+                        const interceptText = props.street || props.intersection || props.address || props.name || `<span id="cam-loc-${props.id}">Click to load location...</span>`;
+
+                        interceptHTML += `
+                            <div class="target-item" onclick="zoomToMap(${lat}, ${lng}, '${props.id}')">
+                                <strong>Camera ${props.id}</strong>
+                                <span style="color:#e74a3b; font-weight:bold; display:block; margin: 2px 0;">Watching: ${props.surveilled_sites_list || "Unknown Site"}</span>
+                                <span>📍 ${interceptText}</span>
+                            </div>`;
+                    } else {
+                        clearHTML += `
+                            <div class="target-item" onclick="zoomToMap(${lat}, ${lng}, '${props.id}')">
+                                <strong>Camera ${props.id}</strong><br>
+                                <span style="color:#666;">📍 <span id="cam-loc-${props.id}">Click to load location...</span></span>
+                            </div>`;
+                    }
+                }
+            });
+
+            safeSetHTML('intercept-list', interceptHTML || "<p style='font-size:12px; color:#666;'>No intercepting cameras.</p>");
+            safeSetHTML('clear-list', clearHTML || "<p style='font-size:12px; color:#666;'>No clear cameras.</p>");
+
+            applyFilters();
+            if (allCameraFeatures.length > 0) map.fitBounds(L.featureGroup(allCameraFeatures.map(i => i.marker)).getBounds());
+
+            safeSetHTML('total-cameras', totalCams.toLocaleString());
+            safeSetHTML('intercept-cameras', interceptCams.toLocaleString());
+        });
+    </script>
+</body>
+</html>
