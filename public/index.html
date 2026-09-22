@@ -85,7 +85,7 @@
                 <p>Cameras Monitoring Sensitive Sites</p>
             </div>
 
-            <!-- STREET VIEW BOX (Restored working A-tag format) -->
+            <!-- STREET VIEW BOX -->
             <div id="global-gsv-container" class="gsv-box">
                 <a id="gsv-link" href="#" target="_blank" class="gsv-btn disabled">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align: middle;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
@@ -161,7 +161,7 @@
                 </div>
             </details>
 
-            <!-- 3. CLEAR CAMERAS -->
+            <!-- CLEAR CAMERAS -->
             <details class="accordion-section">
                 <summary class="accordion-header">Clear Cameras (Routine)</summary>
                 <div class="accordion-content">
@@ -170,7 +170,7 @@
                 </div>
             </details>
 
-            <!-- 4. SELECTED CAMERA PROFILE & COMMUNITY CONTEXT -->
+            <!-- SELECTED CAMERA PROFILE & COMMUNITY CONTEXT -->
             <details class="accordion-section" id="profile-wrapper" open>
                 <summary class="accordion-header">Selected Camera Profile & Community Context</summary>
                 <div class="accordion-content">
@@ -199,10 +199,10 @@
     <script>
         const map = L.map('map').setView([38.5816, -121.4944], 12);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20
+        // OpenStreetMap Free Tile Provider
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
         function safeSetHTML(id, html) {
@@ -235,7 +235,6 @@
             switch(group) { case 'healthcare': return '#ff6b81'; case 'legal': return '#9b59b6'; default: return '#2ecc71'; }
         }
 
-        // Changed cameraLayers storage to hold both the marker and properties to fix the click bug
         let cameraLayers = {};
         let cameraMarkersGroup = L.layerGroup().addTo(map);
         let cameraSectorsGroup = L.layerGroup().addTo(map);
@@ -259,18 +258,15 @@
 
             safeSetHTML('prof-id', props.id || "Unknown");
             
-            // Set temporary loading states in BOTH the profile box and the list item
             safeSetHTML('prof-location', "Loading location...");
             const listLocationSpan = document.getElementById(`cam-loc-${props.id}`);
             if (listLocationSpan) listLocationSpan.innerText = "Loading location...";
             
-            // Fetch live location
             fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?location=${lng},${lat}&f=json`)
                 .then(res => res.json())
                 .then(data => {
                     const addr = data?.address?.Match_addr || data?.address?.ShortLabel || "Location Data Unavailable";
                     safeSetHTML('prof-location', addr);
-                    // Dynamically updates the list text exactly as requested!
                     if (listLocationSpan) listLocationSpan.innerText = addr;
                 })
                 .catch(() => {
@@ -278,7 +274,6 @@
                     if (listLocationSpan) listLocationSpan.innerText = "Location Data Unavailable";
                 });
             
-            // GOOGLE STREET VIEW URL 
             const gsvUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}&heading=${heading}&pitch=0`;
             const gsvLink = document.getElementById('gsv-link');
             if (gsvLink) {
@@ -305,7 +300,6 @@
             if (isNaN(lat) || isNaN(lng)) return;
             map.flyTo([lat, lng], 18, { duration: 1.0 });
             
-            // Fully fixed undefined feature bug here
             if(camId && cameraLayers[camId]) {
                 setTimeout(() => {
                     cameraLayers[camId].marker.openPopup();
@@ -397,7 +391,6 @@
                 return;
             }
 
-            // SENSITIVE SITES (TINY TRIANGLES)
             L.geoJSON(siteData, {
                 pointToLayer: (f, latlng) => {
                     const props = f.properties || {};
@@ -444,7 +437,6 @@
                         interactive: false 
                     });
 
-                    // Store both the marker AND the properties to fix the zoomToMap crash
                     cameraLayers[props.id] = { marker: marker, props: props };
 
                     let popupHTML = `<h4 style="font-size:14px; margin:0 0 6px 0; padding-bottom:4px; border-bottom:1px solid #ccc;">Camera ${props.id || "ALPR"}</h4>`;
@@ -460,11 +452,9 @@
 
                     allCameraFeatures.push({ feature: f, marker, sector });
                     
-                    // HTML LIST GENERATION (Now securely bound to individual click loading)
                     if (isIntercepting) {
                         interceptCams++;
                         
-                        // We extract strings if they exist, otherwise we fallback
                         const interceptText = props.street || props.intersection || props.address || props.name || `<span id="cam-loc-${props.id}">Click to load location...</span>`;
 
                         interceptHTML += `
